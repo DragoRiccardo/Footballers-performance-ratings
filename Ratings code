@@ -1,0 +1,173 @@
+#In the auction of the Fantacalcio 500 credits are available for each participant and must be used to buy 
+#3 goalkeepers, 8 defensors, 8 midfielders and 6 forwards. According to these rules, the prices found through the following
+#functions reflect the prices that I have experienced in the past. I also assume that the participants are 10, so the prices
+#are more competitive and pushed upwards with respect to the case in which the participants are less than 10.
+
+#Since I have used Google Colab the code to import an Excel file is:
+
+if 'google.colab' in str(get_ipython()): 
+    from google.colab import files
+    uploaded = files.upload()
+    path = ''
+else:
+    path = './data/'
+
+import numpy as np
+import pandas as pd 
+players = pd.read_csv(path + 'Players.csv', sep = ';', encoding = 'ISO-8859-1', index_col = 1)
+print(players.head())
+
+#Otherwise the simple code to import the Excel file is:
+#players = pd.read_csv(path/"Players_csv",index_col = 1)
+
+players.rename(columns = {'ï»¿R':'R'}, inplace = True)
+
+#Define an algorithm to find the price assigned to the goalkeepers, accoring to the conceded goals
+
+def bp_por(datfrm):
+  dcl_l=[]
+  for i,r in datfrm.iterrows():
+     for j in range(1,11,1):
+       if r['Gs']<=datfrm['Gs'].quantile(j/10):      #Gs = goal subiti 
+        dcl_l.append((10-j)*6)
+        break  
+  return dcl_l 
+
+#And add a correspondent column
+
+por['RGS']=bp_por(por)    #RGS = Ranking goal subiti
+
+#Define an algorithm to find the price assigned to the goalkeepers, according to the mean score
+
+def mv_por(datfrm):
+  dcl=[]
+  for i,r in datfrm.iterrows():
+     for j in range(9,-1,-1):
+       if r['Mv']>=datfrm['Mv'].quantile(j/10):      #Mv = media voto
+        dcl.append(j*6)
+        break    
+  return dcl 
+
+#And add a correspondent column
+
+por['RMV']=mv_por(por)      #RMV = Ranking media voto
+
+#Define the final price as a weighted mean of conceded goals, mean score, saved penalty, assists, yellow and red cards
+#The weights have been set by trials to find a realistic price as much as possible
+
+def alg_por(dafr):
+  pl=[]
+  for i,r in dafr.iterrows():
+    p=r["RGS"]*0.85 + r["RMV"]*0.15 + r["Rp"]*2 + r["Ass"]*0.5 - r["Amm"]*0.5 - r["Esp"] + r['Gf']
+    pl.append(p)
+  return pl
+
+#And add a correspondent column
+
+por['Final_Price']=alg_por(por)
+
+#Check if the new columns appear by printing the data frame
+
+print(por)
+
+#Analyse the defensors, just the ones who have played more than 5 matches
+
+dif = players[(players['R']=='D') & (players['Pv']>5)].copy()
+
+#As before, find and add a price according to the mean score
+
+def mv_dif(datfrm):
+  dcl=[]
+  for i,r in datfrm.iterrows():
+     for j in range(29,-1,-1):
+       if r['Mv']>=datfrm['Mv'].quantile(j/30):    
+        dcl.append((j/3)*1.5)    
+        break
+  return dcl 
+
+dif['RMV'] = mv_dif(dif)
+
+#Define a final algorithm considering a weighted mean of the mean score, assists, scored goals, yellow and red cards
+#to find an optimal price for the defensors. Then check if it works by printing the head and the tail of the data frame
+
+def alg_dif(dafr):
+  pl=[]
+  for i,r in dafr.iterrows():
+    p=round(max([r["RMV"] + r["Ass"]*2.5 + r['Gf']*4.5 - r["Amm"]*0.75 - r["Esp"]*1.5,1.0]),1)
+    pl.append(p)
+  return pl
+
+dif['Final_Price']=alg_dif(dif)
+
+print(dif.head(20))
+print(dif.tail(20))
+
+#Replicate the same process with the midfielders
+
+cen=players[(players['R']=='C') & (players['Pv']>5)].copy()
+
+#Mean score price
+
+def mv_cen(datfrm):
+  dcl=[]
+  for i,r in datfrm.iterrows():
+     for j in range(29,-1,-1):
+       if r['Mv']>=datfrm['Mv'].quantile(j/30):    
+        dcl.append((j/3)*1)    
+        break
+  return dcl 
+
+cen['RMV']=mv_cen(cen)
+
+#Final price with the same variables as defensors, but different weights
+
+def alg_cen(dafr):
+  pl=[]
+  for i,r in dafr.iterrows():
+    p=round(max([r["RMV"] + r['Ass']*2 + r['Gf']*4.5 - r["Amm"]*1 - r["Esp"]*2,1.0]),1)
+    pl.append(p)
+  return pl
+
+cen['Final_Price']=alg_cen(cen)
+
+print(cen.head(20))
+print(cen.tail(20))
+
+#Finally consider the forwards
+
+att=players[(players['R']=='A') & (players['Pv']>5)].copy()
+
+def mv_att(datfrm):
+  dcl=[]
+  for i,r in datfrm.iterrows():
+     for j in range(29,-1,-1):
+       if r['Mv']>=datfrm['Mv'].quantile(j/30):    
+        dcl.append((j/3)*1)    
+        break
+  return dcl 
+
+att['RMV']=mv_att(att)
+
+def gl_att(datfrm):
+  dcl=[]
+  for i,r in datfrm.iterrows():
+     for j in range(59,-1,-1):
+       if r['Gf']>=datfrm['Gf'].quantile(j/60):    
+        dcl.append(1.1**j)    
+        break
+  return dcl 
+
+att['RGL']=gl_att(att)
+
+  
+def alg_att(dafr):
+  pl=[]
+  for i,r in dafr.iterrows():
+    p=round(max([r["RGL"]*0.7 + r['RMV']*0.3 + r['Ass']*2 - r["Amm"]*1 - r["Esp"]*2,1.0]),1)
+    pl.append(p)
+  return pl
+
+att['Final_Price']=alg_att(att)
+
+print(att.head(20))
+print(att.tail(20))
